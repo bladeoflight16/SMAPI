@@ -86,6 +86,21 @@ namespace StardewModdingAPI.Framework.ModLoading
         /// <exception cref="IncompatibleInstructionException">An incompatible CIL instruction was found while rewriting the assembly.</exception>
         public Assembly Load(IModMetadata mod, string assemblyPath, bool assumeCompatible)
         {
+            ModWarning warnings = ModWarning.None;
+            try
+            {
+                return this.Load(assemblyPath, assumeCompatible, out warnings).Item1;
+            }
+            finally
+            {
+                mod.SetWarning(warnings);
+            }
+        }
+
+        public Tuple<Assembly, AssemblyDefinition, bool> Load(string assemblyPath, bool assumeCompatible, out ModWarning warnings)
+        {
+            warnings = ModWarning.None;
+
             // get referenced local assemblies
             AssemblyParseResult[] assemblies;
             {
@@ -107,6 +122,8 @@ namespace StardewModdingAPI.Framework.ModLoading
             // rewrite & load assemblies in leaf-to-root order
             bool oneAssembly = assemblies.Length == 1;
             Assembly lastAssembly = null;
+            AssemblyDefinition lastAssemblyDef = null;
+            bool lastChanged = false;
             HashSet<string> loggedMessages = new HashSet<string>();
             foreach (AssemblyParseResult assembly in assemblies)
             {
@@ -114,7 +131,7 @@ namespace StardewModdingAPI.Framework.ModLoading
                     continue;
 
                 // rewrite assembly
-                bool changed = this.RewriteAssembly(mod, assembly.Definition, loggedMessages, logPrefix: "      ");
+                bool changed = this.RewriteAssembly(assembly.Definition, loggedMessages, logPrefix: "      ", ref warnings);
 
                 // detect broken assembly reference
                 foreach (AssemblyNameReference reference in assembly.Definition.MainModule.AssemblyReferences)
@@ -124,7 +141,7 @@ namespace StardewModdingAPI.Framework.ModLoading
                         this.Monitor.LogOnce(loggedMessages, $"      Broken code in {assembly.File.Name}: reference to missing assembly '{reference.FullName}'.");
                         if (!assumeCompatible)
                             throw new IncompatibleInstructionException($"Found a reference to missing assembly '{reference.FullName}' while loading assembly {assembly.File.Name}.");
-                        mod.SetWarning(ModWarning.BrokenCodeLoaded);
+                        warnings |= ModWarning.BrokenCodeLoaded;
                         break;
                     }
                 }
@@ -159,14 +176,16 @@ namespace StardewModdingAPI.Framework.ModLoading
 
                 // track loaded assembly for definition resolution
                 this.AssemblyDefinitionResolver.Add(assembly.Definition);
+                lastAssemblyDef = assembly.Definition;
+                lastChanged = changed;
             }
 
             // throw if incompatibilities detected
-            if (!assumeCompatible && mod.Warnings.HasFlag(ModWarning.BrokenCodeLoaded))
+            if (!assumeCompatible && warnings.HasFlag(ModWarning.BrokenCodeLoaded))
                 throw new IncompatibleInstructionException();
 
             // last assembly loaded is the root
-            return lastAssembly;
+            return new Tuple<Assembly, AssemblyDefinition, bool>(lastAssembly, lastAssemblyDef, lastChanged);
         }
 
         /// <summary>Get whether an assembly is loaded.</summary>
@@ -270,15 +289,15 @@ namespace StardewModdingAPI.Framework.ModLoading
         /// <param name="logPrefix">A string to prefix to log messages.</param>
         /// <returns>Returns whether the assembly was modified.</returns>
         /// <exception cref="IncompatibleInstructionException">An incompatible CIL instruction was found while rewriting the assembly.</exception>
-        internal bool RewriteAssembly(IModMetadata mod, AssemblyDefinition assembly, HashSet<string> loggedMessages, string logPrefix)
-        {
-            ModWarning warnings;
-            bool changed = this.RewriteAssembly(assembly, loggedMessages, logPrefix, out warnings);
-            mod.SetWarning(warnings);
-            return changed;
-        }
+        //private bool RewriteAssembly(IModMetadata mod, AssemblyDefinition assembly, HashSet<string> loggedMessages, string logPrefix)
+        //{
+        //    ModWarning warnings;
+        //    bool changed = this.RewriteAssembly(assembly, loggedMessages, logPrefix, out warnings);
+        //    mod.SetWarning(warnings);
+        //    return changed;
+        //}
 
-        internal bool RewriteAssembly(AssemblyDefinition assembly, HashSet<string> loggedMessages, string logPrefix, out ModWarning warnings)
+        private bool RewriteAssembly(AssemblyDefinition assembly, HashSet<string> loggedMessages, string logPrefix, ref ModWarning warnings)
         {
             ModuleDefinition module = assembly.MainModule;
             string filename = $"{assembly.Name.Name}.dll";
