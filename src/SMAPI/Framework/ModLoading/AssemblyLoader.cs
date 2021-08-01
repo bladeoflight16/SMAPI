@@ -270,7 +270,7 @@ namespace StardewModdingAPI.Framework.ModLoading
         /// <param name="logPrefix">A string to prefix to log messages.</param>
         /// <returns>Returns whether the assembly was modified.</returns>
         /// <exception cref="IncompatibleInstructionException">An incompatible CIL instruction was found while rewriting the assembly.</exception>
-        private bool RewriteAssembly(IModMetadata mod, AssemblyDefinition assembly, HashSet<string> loggedMessages, string logPrefix)
+        internal bool RewriteAssembly(IModMetadata mod, AssemblyDefinition assembly, HashSet<string> loggedMessages, string logPrefix)
         {
             ModuleDefinition module = assembly.MainModule;
             string filename = $"{assembly.Name.Name}.dll";
