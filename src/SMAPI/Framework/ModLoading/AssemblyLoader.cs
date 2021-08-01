@@ -272,6 +272,14 @@ namespace StardewModdingAPI.Framework.ModLoading
         /// <exception cref="IncompatibleInstructionException">An incompatible CIL instruction was found while rewriting the assembly.</exception>
         internal bool RewriteAssembly(IModMetadata mod, AssemblyDefinition assembly, HashSet<string> loggedMessages, string logPrefix)
         {
+            ModWarning warnings;
+            bool changed = this.RewriteAssembly(assembly, loggedMessages, logPrefix, out warnings);
+            mod.SetWarning(warnings);
+            return changed;
+        }
+
+        internal bool RewriteAssembly(AssemblyDefinition assembly, HashSet<string> loggedMessages, string logPrefix, out ModWarning warnings)
+        {
             ModuleDefinition module = assembly.MainModule;
             string filename = $"{assembly.Name.Name}.dll";
 
@@ -338,10 +346,11 @@ namespace StardewModdingAPI.Framework.ModLoading
             bool anyRewritten = rewriter.RewriteModule();
 
             // handle rewrite flags
+            warnings = ModWarning.None;
             foreach (IInstructionHandler handler in handlers)
             {
                 foreach (var flag in handler.Flags)
-                    this.ProcessInstructionHandleResult(mod, handler, flag, loggedMessages, logPrefix, filename);
+                    warnings |= this.ProcessInstructionHandleResult(handler, flag, loggedMessages, logPrefix, filename);
             }
 
             return platformChanged || anyRewritten;
@@ -354,8 +363,10 @@ namespace StardewModdingAPI.Framework.ModLoading
         /// <param name="loggedMessages">The messages already logged for the current mod.</param>
         /// <param name="logPrefix">A string to prefix to log messages.</param>
         /// <param name="filename">The assembly filename for log messages.</param>
-        private void ProcessInstructionHandleResult(IModMetadata mod, IInstructionHandler handler, InstructionHandleResult result, HashSet<string> loggedMessages, string logPrefix, string filename)
+        private ModWarning ProcessInstructionHandleResult(IInstructionHandler handler, InstructionHandleResult result, HashSet<string> loggedMessages, string logPrefix, string filename)
         {
+            ModWarning warning = ModWarning.None;
+
             // get message template
             // ($phrase is replaced with the noun phrase or messages)
             string template = null;
@@ -367,42 +378,42 @@ namespace StardewModdingAPI.Framework.ModLoading
 
                 case InstructionHandleResult.NotCompatible:
                     template = $"{logPrefix}Broken code in {filename}: $phrase.";
-                    mod.SetWarning(ModWarning.BrokenCodeLoaded);
+                    warning |= ModWarning.BrokenCodeLoaded;
                     break;
 
                 case InstructionHandleResult.DetectedGamePatch:
                     template = $"{logPrefix}Detected game patcher ($phrase) in assembly {filename}.";
-                    mod.SetWarning(ModWarning.PatchesGame);
+                    warning |= ModWarning.PatchesGame;
                     break;
 
                 case InstructionHandleResult.DetectedSaveSerializer:
                     template = $"{logPrefix}Detected possible save serializer change ($phrase) in assembly {filename}.";
-                    mod.SetWarning(ModWarning.ChangesSaveSerializer);
+                    warning |= ModWarning.ChangesSaveSerializer;
                     break;
 
                 case InstructionHandleResult.DetectedUnvalidatedUpdateTick:
                     template = $"{logPrefix}Detected reference to $phrase in assembly {filename}.";
-                    mod.SetWarning(ModWarning.UsesUnvalidatedUpdateTick);
+                    warning |= ModWarning.UsesUnvalidatedUpdateTick;
                     break;
 
                 case InstructionHandleResult.DetectedDynamic:
                     template = $"{logPrefix}Detected 'dynamic' keyword ($phrase) in assembly {filename}.";
-                    mod.SetWarning(ModWarning.UsesDynamic);
+                    warning |= ModWarning.UsesDynamic;
                     break;
 
                 case InstructionHandleResult.DetectedConsoleAccess:
                     template = $"{logPrefix}Detected direct console access ($phrase) in assembly {filename}.";
-                    mod.SetWarning(ModWarning.AccessesConsole);
+                    warning |= ModWarning.AccessesConsole;
                     break;
 
                 case InstructionHandleResult.DetectedFilesystemAccess:
                     template = $"{logPrefix}Detected filesystem access ($phrase) in assembly {filename}.";
-                    mod.SetWarning(ModWarning.AccessesFilesystem);
+                    warning |= ModWarning.AccessesFilesystem;
                     break;
 
                 case InstructionHandleResult.DetectedShellAccess:
                     template = $"{logPrefix}Detected shell or process access ($phrase) in assembly {filename}.";
-                    mod.SetWarning(ModWarning.AccessesShell);
+                    warning |= ModWarning.AccessesShell;
                     break;
 
                 case InstructionHandleResult.None:
@@ -411,17 +422,20 @@ namespace StardewModdingAPI.Framework.ModLoading
                 default:
                     throw new NotSupportedException($"Unrecognized instruction handler result '{result}'.");
             }
-            if (template == null)
-                return;
 
-            // format messages
-            if (handler.Phrases.Any())
+            if (template != null)
             {
-                foreach (string message in handler.Phrases)
-                    this.Monitor.LogOnce(loggedMessages, template.Replace("$phrase", message));
+                // format messages
+                if (handler.Phrases.Any())
+                {
+                    foreach (string message in handler.Phrases)
+                        this.Monitor.LogOnce(loggedMessages, template.Replace("$phrase", message));
+                }
+                else
+                    this.Monitor.LogOnce(loggedMessages, template.Replace("$phrase", handler.DefaultPhrase ?? handler.GetType().Name));
             }
-            else
-                this.Monitor.LogOnce(loggedMessages, template.Replace("$phrase", handler.DefaultPhrase ?? handler.GetType().Name));
+
+            return warning;
         }
 
         /// <summary>Get the correct reference to use for compatibility with the current platform.</summary>
