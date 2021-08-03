@@ -30,19 +30,24 @@ namespace StardewModdingAPI.Framework.ModLoading
 
         public static void RewriteAssembly(string assemblyPath)
         {
+            var monitor = new ConsoleMonitor();
             var loader = new AssemblyLoader(
                 Constants.Platform,
                 Constants.GameFramework,
-                new ConsoleMonitor(),
+                monitor,
                 paranoidMode: true,
                 rewriteMods: true
             );
+
+            monitor.Log("Starting");
 
             //var assemblyDef = AssemblyDefinition.ReadAssembly(assemblyPath);
 
             //var messages = new HashSet<string>();
 
-            var result = loader.Load(assemblyPath, false, out ModWarning warnings);
+            ModWarning warnings;
+            //loader.Load("/home/dev/.local/share/Steam/steamapps/common/Stardew Valley/StardewValley.exe", assumeCompatible: true, out warnings);
+            var result = loader.Load(assemblyPath, false, out warnings);
             var assembly = result.Item1;
             var assemblyDef = result.Item2;
             bool changed = result.Item3;

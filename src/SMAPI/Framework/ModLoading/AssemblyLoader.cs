@@ -106,6 +106,10 @@ namespace StardewModdingAPI.Framework.ModLoading
             {
                 HashSet<string> visitedAssemblyNames = new HashSet<string>(AppDomain.CurrentDomain.GetAssemblies().Select(p => p.GetName().Name)); // don't try loading assemblies that are already loaded
                 assemblies = this.GetReferencedLocalAssemblies(new FileInfo(assemblyPath), visitedAssemblyNames, this.AssemblyDefinitionResolver).ToArray();
+                foreach (var a in assemblies)
+                {
+                    this.Monitor.Log("Referenced assembly: " + a.Definition.FullName);
+                }
             }
 
             // validate load
